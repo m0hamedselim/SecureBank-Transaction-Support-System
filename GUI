@@ -1,0 +1,312 @@
+using System;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using System.Drawing;
+
+namespace SecureBankSystem
+{
+    public class ClientForm : Form
+    {
+        private const string SERVER_IP = "127.0.0.1";
+        private const int TCP_PORT = 8000;
+        private const int UDP_PORT = 8001;
+
+       
+        private Socket? tcpClientSocket;
+
+        private Panel? pnlAuth;
+        private Panel? pnlMainApp;
+        private TextBox? txtUsername;
+        private TextBox? txtPassword;
+        private Button? btnLogin;
+        private Label? lblAuthStatus;
+
+        private TextBox? txtAmount;
+        private TextBox? txtChat;
+        private ListBox? lstLog;
+        private Label? lblBalance;
+        private Label? lblUdpRates;
+        private Label? lblStudentInfo;
+
+        public ClientForm()
+        {
+            InitializeComponents();
+    
+            ConnectToServer();
+        }
+
+        private void InitializeComponents()
+        {
+            // إعدادات النافذة الرئيسية (مساحة أكبر لتكون مريحة وواضحة جداً للمستخدم)
+            this.Text = "SecureBank - Premium Smart Client Dashboard";
+            this.Size = new Size(650, 750);
+            this.StartPosition = FormStartPosition.CenterScreen;
+            this.FormBorderStyle = FormBorderStyle.FixedSingle;
+            this.MaximizeBox = false;
+
+            // تصحيح: تم تحويل FormStyle إلى FontStyle الصحيحة أكاديمياً وعملياً
+            this.Font = new Font("Segoe UI", 10, FontStyle.Regular);
+            this.BackColor = Color.FromArgb(245, 247, 250); // خلفية رمادية فاتحة مريحة جداً للعين
+
+            // شريط علوي أنيق يحمل اسمك وبياناتك الأكاديمية (إلزامي لضمان التقييم طبقاً لـ Lab 2)
+            Panel pnlHeader = new Panel { Size = new Size(650, 80), Location = new Point(0, 0), BackColor = Color.FromArgb(26, 54, 93) };
+            lblStudentInfo = new Label
+            {
+              
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI", 10, FontStyle.Bold),
+                Location = new Point(20, 15),
+                Size = new Size(590, 50),
+                TextAlign = ContentAlignment.MiddleCenter
+            };
+            pnlHeader.Controls.Add(lblStudentInfo);
+
+            // ==========================================
+            // 1. لوحة تسجيل الدخول والتحقق (Authentication Panel)
+            // ==========================================
+            pnlAuth = new Panel { Size = new Size(590, 590), Location = new Point(20, 90), BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
+            Label lblAuthTitle = new Label { Text = "🔒 Secure Identity Verification", Font = new Font("Segoe UI", 16, FontStyle.Bold), ForeColor = Color.FromArgb(44, 122, 123), Location = new Point(50, 50), Size = new Size(490, 40), TextAlign = ContentAlignment.MiddleCenter };
+
+            Label lblUser = new Label { Text = "Username:", Location = new Point(100, 140), AutoSize = true, Font = new Font("Segoe UI", 11, FontStyle.Bold) };
+            txtUsername = new TextBox { Location = new Point(100, 170), Width = 390, Font = new Font("Segoe UI", 12) };
+            txtUsername.Text = "admin"; // قيمة تسهيلية للمناقشة
+
+            Label lblPass = new Label { Text = "Password:", Location = new Point(100, 220), AutoSize = true, Font = new Font("Segoe UI", 11, FontStyle.Bold) };
+            txtPassword = new TextBox { Location = new Point(100, 250), Width = 390, Font = new Font("Segoe UI", 12), PasswordChar = '●' };
+            txtPassword.Text = "123"; // الباسورد المعدل
+
+            btnLogin = new Button { Text = "VERIFY CREDENTIALS", Location = new Point(100, 320), Width = 390, Height = 50, BackColor = Color.FromArgb(44, 122, 123), ForeColor = Color.White, Font = new Font("Segoe UI", 12, FontStyle.Bold), FlatStyle = FlatStyle.Flat };
+            lblAuthStatus = new Label { Text = "Please log in to unlock banking services.", Location = new Point(100, 400), Size = new Size(390, 60), TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI", 10, FontStyle.Italic), ForeColor = Color.Gray };
+
+            btnLogin.Click += async (s, e) => await ExecuteLogin();
+
+            pnlAuth.Controls.AddRange(new Control[] { lblAuthTitle, lblUser, txtUsername, lblPass, txtPassword, btnLogin, lblAuthStatus });
+
+            // ==========================================
+            // ==========================================
+            pnlMainApp = new Panel { Size = new Size(590, 590), Location = new Point(20, 90), BackColor = Color.White, Visible = false };
+
+            GroupBox gbBanking = new GroupBox { Text = " 💰 Financial Transaction", Size = new Size(550, 140), Location = new Point(20, 10), Font = new Font("Segoe UI", 10, FontStyle.Bold), ForeColor = Color.FromArgb(26, 54, 93) };
+            lblBalance = new Label { Text = "Current Balance: $0.00", Location = new Point(20, 35), Size = new Size(510, 30), ForeColor = Color.FromArgb(44, 122, 123), Font = new Font("Segoe UI", 14, FontStyle.Bold) };
+
+            Label lblAmtTag = new Label { Text = "Amount ($):", Location = new Point(20, 85), AutoSize = true, Font = new Font("Segoe UI", 10, FontStyle.Regular) };
+            txtAmount = new TextBox { Location = new Point(110, 82), Width = 140, Font = new Font("Segoe UI", 11, FontStyle.Bold), ForeColor = Color.Navy };
+
+            Button btnDeposit = new Button { Text = "DEPOSIT", Location = new Point(270, 78), Width = 120, Height = 38, BackColor = Color.FromArgb(72, 187, 120), ForeColor = Color.White, Font = new Font("Segoe UI", 10, FontStyle.Bold), FlatStyle = FlatStyle.Flat };
+            Button btnWithdraw = new Button { Text = "WITHDRAW", Location = new Point(400, 78), Width = 120, Height = 38, BackColor = Color.FromArgb(245, 101, 101), ForeColor = Color.White, Font = new Font("Segoe UI", 10, FontStyle.Bold), FlatStyle = FlatStyle.Flat };
+
+            btnDeposit.Click += async (s, e) => { if (ValidateAmount()) await SendTcpCommand($"DEPOSIT:{txtAmount.Text}"); };
+            btnWithdraw.Click += async (s, e) => { if (ValidateAmount()) await SendTcpCommand($"WITHDRAW:{txtAmount.Text}"); };
+
+            gbBanking.Controls.AddRange(new Control[] { lblBalance, lblAmtTag, txtAmount, btnDeposit, btnWithdraw });
+
+            GroupBox gbChat = new GroupBox { Text = " 🤖 Smart AI Support Chatbot", Size = new Size(550, 240), Location = new Point(20, 160), Font = new Font("Segoe UI", 10, FontStyle.Bold), ForeColor = Color.FromArgb(44, 122, 123) };
+            txtChat = new TextBox { Location = new Point(20, 35), Width = 380, Font = new Font("Segoe UI", 11) };
+            txtChat.PlaceholderText = "Type keyword (e.g., HELP, HOURS, LOAN)...";
+
+            Button btnSendChat = new Button { Text = "ASK BOT", Location = new Point(410, 32), Width = 120, Height = 34, BackColor = Color.FromArgb(49, 151, 149), ForeColor = Color.White, Font = new Font("Segoe UI", 10, FontStyle.Bold), FlatStyle = FlatStyle.Flat };
+            lstLog = new ListBox { Location = new Point(20, 80), Size = new Size(510, 140), Font = new Font("Consolas", 9.5f, FontStyle.Regular), BackColor = Color.FromArgb(247, 250, 252) };
+
+            btnSendChat.Click += async (s, e) => { if (txtChat != null && !string.IsNullOrWhiteSpace(txtChat.Text)) await SendTcpCommand($"CHAT:{txtChat.Text}"); };
+
+            gbChat.Controls.AddRange(new Control[] { txtChat, btnSendChat, lstLog });
+
+            GroupBox gbUdp = new GroupBox { Text = " ⚡ Real-Time Forex Exchange Ticker ", Size = new Size(550, 140), Location = new Point(20, 410), Font = new Font("Segoe UI", 10, FontStyle.Bold), ForeColor = Color.FromArgb(116, 42, 141) };
+
+            lblUdpRates = new Label { Text = "⚡ Click the button below to view streaming rates instantly", Location = new Point(20, 35), Size = new Size(510, 40), TextAlign = ContentAlignment.MiddleCenter, BackColor = Color.FromArgb(26, 32, 44), ForeColor = Color.FromArgb(72, 187, 120), Font = new Font("Consolas", 10, FontStyle.Bold) };
+            Button btnGetRates = new Button { Text = "view LIVE ", Location = new Point(20, 85), Width = 510, Height = 40, BackColor = Color.FromArgb(116, 42, 141), ForeColor = Color.White, Font = new Font("Segoe UI", 10, FontStyle.Bold), FlatStyle = FlatStyle.Flat };
+
+            btnGetRates.Click += (s, e) => ExecuteUdpRequest();
+
+            gbUdp.Controls.AddRange(new Control[] { lblUdpRates, btnGetRates });
+
+            pnlMainApp.Controls.AddRange(new Control[] { gbBanking, gbChat, gbUdp });
+
+            this.Controls.AddRange(new Control[] { pnlHeader, pnlAuth, pnlMainApp });
+        }
+
+        private void ConnectToServer()
+        {
+            try
+            {
+                tcpClientSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                tcpClientSocket.Connect(new IPEndPoint(IPAddress.Parse(SERVER_IP), TCP_PORT));
+
+                byte[] initBuffer = new byte[1024];
+                int bytesRead = tcpClientSocket.Receive(initBuffer);
+                string serverGreeting = Encoding.ASCII.GetString(initBuffer, 0, bytesRead);
+
+                if (lblAuthStatus != null)
+                {
+                    lblAuthStatus.Text = "Connected to server. " + serverGreeting.Trim();
+                }
+            }
+            catch (Exception ex)
+            {
+                if (lblAuthStatus != null && btnLogin != null)
+                {
+                    lblAuthStatus.ForeColor = Color.Red;
+                    lblAuthStatus.Text = "❌ Failed to link with backend server:\n" + ex.Message;
+                    btnLogin.Enabled = false;
+                }
+            }
+        }
+
+        private async Task ExecuteLogin()
+        {
+            if (txtUsername == null || txtPassword == null || lblAuthStatus == null || lstLog == null || lblBalance == null || pnlAuth == null || pnlMainApp == null) return;
+
+            string user = txtUsername.Text.Trim();
+            string pass = txtPassword.Text.Trim();
+
+            if (string.IsNullOrEmpty(user) || string.IsNullOrEmpty(pass))
+            {
+                lblAuthStatus.ForeColor = Color.OrangeRed;
+                lblAuthStatus.Text = "⚠️ Please fill in both login fields!";
+                return;
+            }
+
+            lblAuthStatus.ForeColor = Color.Navy;
+            lblAuthStatus.Text = "Sending secure handshake challenge...";
+
+            string loginCmd = $"LOGIN {user} {pass}";
+            string response = await Task.Run(() => TalkToTcpSocket(loginCmd));
+
+            if (response.StartsWith("AUTH_SUCCESS"))
+            {
+                pnlAuth.Visible = false;
+                pnlMainApp.Visible = true;
+
+                lstLog.Items.Add($"[{DateTime.Now:HH:mm:ss}] Secure handshake completed successfully.");
+                lstLog.Items.Add($"[{DateTime.Now:HH:mm:ss}] Server: {response.Trim()}");
+
+                lblBalance.Text = "Current Balance: $0.00";
+            }
+            else
+            {
+                lblAuthStatus.ForeColor = Color.Red;
+                lblAuthStatus.Text = "❌ " + response;
+            }
+        }
+
+        private async Task SendTcpCommand(string command)
+        {
+            if (lstLog == null || lblBalance == null || txtAmount == null || txtChat == null) return;
+
+            string response = await Task.Run(() => TalkToTcpSocket(command));
+
+            lstLog.Items.Add($"[{DateTime.Now:HH:mm:ss}] Sent: {command}");
+            lstLog.Items.Add($"[{DateTime.Now:HH:mm:ss}] Reply: {response.Trim()}");
+            lstLog.SelectedIndex = lstLog.Items.Count - 1; // التمرير التلقائي لآخر سطر
+
+            if (response.Contains("Balance"))
+            {
+                string[] parts = response.Split(new[] { "Balance:" }, StringSplitOptions.None);
+                if (parts.Length > 1)
+                {
+                    lblBalance.Text = $"Current Balance: {parts[1].Trim()}";
+                }
+                else if (response.Contains("Balance "))
+                {
+                    lblBalance.Text = $"Current Balance: {response.Split(new[] { "Balance " }, StringSplitOptions.None)[1].Trim()}";
+                }
+            }
+
+            txtAmount.Clear();
+            txtChat.Clear();
+        }
+
+        private string TalkToTcpSocket(string textToSend)
+        {
+            if (tcpClientSocket == null) return "ERROR: Socket not initialized.";
+            try
+            {
+                byte[] data = Encoding.ASCII.GetBytes(textToSend);
+                tcpClientSocket.Send(data);
+
+                byte[] incomingBuffer = new byte[1024];
+                int bytesReceived = tcpClientSocket.Receive(incomingBuffer);
+
+                if (bytesReceived == 0)
+                {
+                    return "ERROR: Lost connection to backend server.";
+                }
+
+                return Encoding.ASCII.GetString(incomingBuffer, 0, bytesReceived);
+            }
+            catch (Exception ex)
+            {
+                return "SOCKET_ERROR: " + ex.Message;
+            }
+        }
+
+        private void ExecuteUdpRequest()
+        {
+            if (lblUdpRates == null) return;
+
+            Socket udpClientSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            IPEndPoint serverUdpEndPoint = new IPEndPoint(IPAddress.Parse(SERVER_IP), UDP_PORT);
+
+            try
+            {
+                byte[] requestBytes = Encoding.ASCII.GetBytes("GET_RATES");
+                udpClientSocket.SendTo(requestBytes, serverUdpEndPoint);
+
+                byte[] incomingBuffer = new byte[1024];
+                EndPoint remoteServerEndPoint = new IPEndPoint(IPAddress.Any, 0);
+
+                int bytesReceived = udpClientSocket.ReceiveFrom(incomingBuffer, ref remoteServerEndPoint);
+                string responseData = Encoding.ASCII.GetString(incomingBuffer, 0, bytesReceived);
+
+                lblUdpRates.Text = responseData.Replace("TICKER_DATA:", "📈 ");
+                lblUdpRates.ForeColor = Color.FromArgb(72, 187, 120);
+            }
+            catch (Exception ex)
+            {
+                lblUdpRates.Text = "⚠️ Failed to broadcast UDP query.";
+                lblUdpRates.ForeColor = Color.FromArgb(245, 101, 101);
+                Console.WriteLine(ex.Message);
+            }
+            finally
+            {
+                udpClientSocket.Close();
+            }
+        }
+
+        private bool ValidateAmount()
+        {
+            if (txtAmount == null) return false;
+            if (decimal.TryParse(txtAmount.Text, out decimal amt) && amt > 0)
+            {
+                return true;
+            }
+            MessageBox.Show("⚠️ Invalid numeric amount entered! Please write a valid positive number.", "Input Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            if (tcpClientSocket != null && tcpClientSocket.Connected)
+            {
+                try
+                {
+                    tcpClientSocket.Shutdown(SocketShutdown.Both);
+                }
+                catch { }
+                tcpClientSocket.Close();
+            }
+            base.OnFormClosing(e);
+        }
+
+        [STAThread]
+        static void Main()
+        {
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            Application.Run(new ClientForm());
+        }
+    }
+}
